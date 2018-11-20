@@ -7,22 +7,31 @@ difference between str in Python 2 and Python 3.
 
 The semantics of Python 3's version are more useful because they support
 unicode natively, while Python 2's csv does not.
-"""
-from __future__ import unicode_literals, absolute_import
 
-__all__ = [ "QUOTE_MINIMAL", "QUOTE_ALL", "QUOTE_NONNUMERIC", "QUOTE_NONE",
-            "Error", "Dialect", "__doc__", "excel", "excel_tab",
-            "field_size_limit", "reader", "writer",
-            "register_dialect", "get_dialect", "list_dialects", "Sniffer",
-            "unregister_dialect", "__version__", "DictReader", "DictWriter" ]
+This backport is up to date with csv.py from Python 3.7.1+
+e.g. this commit
+https://raw.githubusercontent.com/python/cpython/8b9c33ea9ce902f902c9d9900121010801950547/Lib/csv.py
+
+"""
+from __future__ import absolute_import, unicode_literals
 
 import re
+from csv import Error, __version__, \
+                 field_size_limit, \
+                 QUOTE_MINIMAL, QUOTE_ALL, QUOTE_NONNUMERIC, QUOTE_NONE, \
+                 __doc__
+
+
 import numbers
+from collections import OrderedDict
 from io import StringIO
-from csv import (
-    QUOTE_MINIMAL, QUOTE_ALL, QUOTE_NONNUMERIC, QUOTE_NONE,
-    __version__, __doc__, Error, field_size_limit,
-)
+
+__all__ = ["QUOTE_MINIMAL", "QUOTE_ALL", "QUOTE_NONNUMERIC", "QUOTE_NONE",
+           "Error", "Dialect", "__doc__", "excel", "excel_tab",
+           "field_size_limit", "reader", "writer",
+           "register_dialect", "get_dialect", "list_dialects", "Sniffer",
+           "unregister_dialect", "__version__", "DictReader", "DictWriter",
+           "unix_dialect"]
 
 # Stuff needed from six
 import sys
@@ -459,9 +468,10 @@ def list_dialects():
 
 class Dialect(object):
     """Describe a CSV dialect.
+
     This must be subclassed (see csv.excel).  Valid attributes are:
     delimiter, quotechar, escapechar, doublequote, skipinitialspace,
-    lineterminator, quoting, strict.
+    lineterminator, quoting.
     """
     _name = ""
     _valid = False
@@ -473,12 +483,11 @@ class Dialect(object):
     skipinitialspace = None
     lineterminator = None
     quoting = None
-    strict = None
 
     def __init__(self):
-        self.validate(self)
         if self.__class__ != Dialect:
             self._valid = True
+        self.validate(self)
 
     @classmethod
     def validate(cls, dialect):
@@ -579,6 +588,8 @@ class Dialect(object):
             raise AttributeError('dialect is immutable.')
         super(Dialect, self).__setattr__(attr, value)
 
+    def __copy__(self):
+        raise TypeError('dialect cannot be copied.')
 
 class excel(Dialect):
     """Describe the usual properties of Excel-generated CSV files."""
@@ -645,7 +656,7 @@ class DictReader(object):
         # values
         while row == []:
             row = next(self.reader)
-        d = dict(zip(self.fieldnames, row))
+        d = OrderedDict(zip(self.fieldnames, row))
         lf = len(self.fieldnames)
         lr = len(row)
         if lf < lr:
@@ -745,10 +756,10 @@ class Sniffer(object):
         """
 
         matches = []
-        for restr in ('(?P<delim>[^\w\n"\'])(?P<space> ?)(?P<quote>["\']).*?(?P=quote)(?P=delim)', # ,".*?",
-                      '(?:^|\n)(?P<quote>["\']).*?(?P=quote)(?P<delim>[^\w\n"\'])(?P<space> ?)',   #  ".*?",
-                      '(?P<delim>>[^\w\n"\'])(?P<space> ?)(?P<quote>["\']).*?(?P=quote)(?:$|\n)',  # ,".*?"
-                      '(?:^|\n)(?P<quote>["\']).*?(?P=quote)(?:$|\n)'):                            #  ".*?" (no delim, no space)
+        for restr in (r'(?P<delim>[^\w\n"\'])(?P<space> ?)(?P<quote>["\']).*?(?P=quote)(?P=delim)', # ,".*?",
+                      r'(?:^|\n)(?P<quote>["\']).*?(?P=quote)(?P<delim>[^\w\n"\'])(?P<space> ?)',   #  ".*?",
+                      r'(?P<delim>[^\w\n"\'])(?P<space> ?)(?P<quote>["\']).*?(?P=quote)(?:$|\n)',   # ,".*?"
+                      r'(?:^|\n)(?P<quote>["\']).*?(?P=quote)(?:$|\n)'):                            #  ".*?" (no delim, no space)
             regexp = re.compile(restr, re.DOTALL | re.MULTILINE)
             matches = regexp.findall(data)
             if matches:
@@ -837,7 +848,7 @@ class Sniffer(object):
         charFrequency = {}
         modes = {}
         delims = {}
-        start, end = 0, min(chunkLength, len(data))
+        start, end = 0, chunkLength
         while start < len(data):
             iteration += 1
             for line in data[start:end]:
@@ -866,7 +877,7 @@ class Sniffer(object):
 
             # build a list of possible delimiters
             modeList = modes.items()
-            total = float(chunkLength * iteration)
+            total = float(min(chunkLength * iteration, len(data)))
             # (rows of consistent data) / (number of rows) = 100%
             consistency = 1.0
             # minimum consistency threshold
